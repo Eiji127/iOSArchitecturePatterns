@@ -5,6 +5,33 @@ final class CommonMessageAPI {
     func sendImageMessage(image: UIImage, text: String?, completion: @escaping (ImageMessage?) -> Void) { ... }
 }
 
+enum ImageMessageInputError: Error {
+    case noImage, tooLongText(count: Int)
+}
+
+struct ImageMessageInput {
+    var text: String?
+    var image: UIImage?
+    func validate() throws -> (image: UIImage, text: String?) {
+        guard let image = image else {
+            throw ImageMessageInputError.noImage
+        }
+        if let text = text, text.count >= 80
+        {
+            throw ImageMessageInputError.tooLongText(count: text.count)
+        }
+        return (image, text)
+        
+    }
+    
+    /*
+     1. try input.validate() で送信情報を取得
+     2. Error が throw されたら、catch して delegate に不備を伝える。送信処理は必然的に
+     中断。Error は失敗要因の詳細表現として利用可能
+     3. 送信情報が取得できたら、それを引数に送信処理を行う
+     */
+}
+
 // ImageMessageの入力値に関するプロパティはimageとtextの２つだとわかる↓
 struct ImageMessageInputValidator {
     let image: UIImage?
