@@ -1,20 +1,28 @@
-
 /*
- Single Responsibility Principle(= 単一責任原則)でしたいこと
- ・バリデーション部分の切り分け(
- MessageSenderは本来の目的である「メッセージ送信」とは別の関心であり、別の型として扱うべき！
+ Dependency Inversion Principle(= 依存関係逆転の原則)でしたいこと
+ ・通信部分の動作保証(
+ 1. 通信中には isLoading が true になり、通信後には isLoading が false になる
+ 2. 通信後、 result として値あるいは nil が入り、 delegate に通信完了が通知される
  )
+ → 状態管理のテストが必要(テストのたびにネットワーク通信が走るのは悩ましい)
  */
 
+// ↓ ~~~~ API通信のインターフェイスを次のようにprotocolで表現することで、 実際のAPI 通信の実装とテストにのみ用いるスタブ実装を差し替え可能
+protocol CommonMessageAPIProtocol {
+    func fetchAll(ofUserId: Int, completion: ...)
+    func fetch(id: Int, completion: ...)
+    func sendTextMessage(text: String, completion: ...)
+    func sendImageMessage(image: UIImage, text: String?, completion: ...)
+}
 
-
-
-final class CommonMessageAPI {
+final class CommonMessageAPI: CommonMessageAPIProtocol {
     func fetchAll(ofUserId: Int, completion: @escaping ([Message]?) -> Void) { ... }
     func fetch(id: Int, completion: @escaping (Message?) -> Void) { ... }
     func sendTextMessage(text: String, completion: @escaping (TextMessage?) -> Void) { ... }
     func sendImageMessage(image: UIImage, text: String?, completion: @escaping (ImageMessage?) -> Void) { ... }
 }
+
+// ~~~~~
 
 enum ImageMessageInputError: Error {
     case noImage, tooLongText(count: Int)
@@ -81,13 +89,15 @@ struct MessageInputValidator {
 }
 
 final class MessageSender {
-    private let api = CommonMessageAPI()
+    private let api: CommonMessageAPI // ← MessageSender をインスタンス化したときに、CommonMessageAPIProtocol に適合した何者かを渡すようにコードを変更
     let messageType: MessageType
     var delegate: MessageSenderDelegate?
-    // MessageType.officialをセットするのは禁止!!
-    init(messageType: MessageType) {
+    init(messageType: MessageType, api: CommonMessageAPI) {
         self.messageType = messageType
-    }// 送信するメッセージの入力値
+        self.api = api
+    }
+    
+    
     var text: String? { // TextMessage,ImageMessageどちらの場合も使う
         didSet { if !isTextValid { delegate?.validではないことを伝える() } }
     }
@@ -115,6 +125,7 @@ final class MessageSender {
         }
     }
 }
+
 
 
 
