@@ -1,13 +1,11 @@
+
 /*
- Dependency Inversion Principle(= 依存関係逆転の原則)でしたいこと
- ・通信部分の動作保証(
- 1. 通信中には isLoading が true になり、通信後には isLoading が false になる
- 2. 通信後、 result として値あるいは nil が入り、 delegate に通信完了が通知される
+ Open/Closed Principle(= 開放閉鎖の原則)でしたいこと
+ ・変わりやすい部分、変わらない部分を分離(
+ 1. TextMessageとImageMessageの変わる部分を閉じ込め、送信処理部分は共通化する。
  )
- → 状態管理のテストが必要(テストのたびにネットワーク通信が走るのは悩ましい)
  */
 
-// ↓ ~~~~ API通信のインターフェイスを次のようにprotocolで表現することで、 実際のAPI 通信の実装とテストにのみ用いるスタブ実装を差し替え可能
 protocol MessageSenderAPIProtocol {
     func fetchAll(ofUserId: Int, completion: ...)
     func fetch(id: Int, completion: ...)
@@ -22,7 +20,22 @@ final class CommonMessageAPI: CommonMessageAPIProtocol {
     func sendImageMessage(image: UIImage, text: String?, completion: @escaping (ImageMessage?) -> Void) { ... }
 }
 
-// ~~~~~
+// ↓ SendableMessageStarategyのcaseが増えてもMessageSenderを変更する必要はない（SendableMessageStrategy は「拡張に対して開い」ており、 MessageSender は「修正 に対して閉じ」ている）
+enum SendableMessageStrategy {
+    case text(api: TextMessageSenderAPI, input: TextMessageInput)
+    case image(api: ImageMessageSenderAPI, input: ImageMessageInput)
+    
+    mutating func update(input: Any) {...} // inputを置き換える
+    func send(completion: @escaping(Message?) -> Void) {...} // caseごとに通信を行う
+}
+
+// 新たなErrorを追加したいときOpen/Closed Principleを適用すると良い
+enum State {
+    case inputting(validationError: Error?)
+    case sending
+    case sent(Message)
+    case connectionFailed
+}
 
 enum ImageMessageInputError: Error {
     case noImage, tooLongText(count: Int)
@@ -42,16 +55,8 @@ struct ImageMessageInput {
         return (image, text)
         
     }
-    
-    /*
-     1. try input.validate() で送信情報を取得
-     2. Error が throw されたら、catch して delegate に不備を伝える。送信処理は必然的に
-     中断。Error は失敗要因の詳細表現として利用可能
-     3. 送信情報が取得できたら、それを引数に送信処理を行う
-     */
 }
 
-// ImageMessageの入力値に関するプロパティはimageとtextの２つだとわかる↓
 struct ImageMessageInputValidator {
     let image: UIImage?
     let text: String?
@@ -62,16 +67,15 @@ struct ImageMessageInputValidator {
     }
 }
 
-// validationのみを責務とする型 → MessageSender の isLoading や result といった状態のことは気にする必要はない
 struct MessageInputValidator {
     let messageType: MessageType
     let image: UIImage?
     let text: String?
     private var isTextValid: Bool {
-        switch messageType { // ← ここでswitchする必要がない(TextMessageとImageMessageは本来関連のない処理のはず)
+        switch messageType {
         case .text: return text != nil && text!.count <= 300 // 300 字以内
         case .image: return text == nil || text!.count <= 80 // 80 字以内 or nil
-        case .official: return false // OfficialMessageはありえない
+        case .official: return false // ← これいらん！！
         }
     }
     

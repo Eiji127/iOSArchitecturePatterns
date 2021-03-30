@@ -1,13 +1,12 @@
+
 /*
- Dependency Inversion Principle(= 依存関係逆転の原則)でしたいこと
- ・通信部分の動作保証(
- 1. 通信中には isLoading が true になり、通信後には isLoading が false になる
- 2. 通信後、 result として値あるいは nil が入り、 delegate に通信完了が通知される
+ Interface Segregation Principle(= インターフェース分離の法則)でしたいこと
+ ・ユーザの送信には関係がない要素を分離(
+ 1. MessageSenderAPIProtocol内のメソッドfetchAll()とfetch()はメッセージ送信とは関係ない
+ 2. MessageTypeの.officialのcaseは本来メッセージの送信には関係がない
  )
- → 状態管理のテストが必要(テストのたびにネットワーク通信が走るのは悩ましい)
  */
 
-// ↓ ~~~~ API通信のインターフェイスを次のようにprotocolで表現することで、 実際のAPI 通信の実装とテストにのみ用いるスタブ実装を差し替え可能
 protocol MessageSenderAPIProtocol {
     func fetchAll(ofUserId: Int, completion: ...)
     func fetch(id: Int, completion: ...)
@@ -22,7 +21,10 @@ final class CommonMessageAPI: CommonMessageAPIProtocol {
     func sendImageMessage(image: UIImage, text: String?, completion: @escaping (ImageMessage?) -> Void) { ... }
 }
 
-// ~~~~~
+// 「送信できるメッセージ」を網羅している↓
+enum SendableMessageType {
+    case text, image
+}
 
 enum ImageMessageInputError: Error {
     case noImage, tooLongText(count: Int)
@@ -42,16 +44,8 @@ struct ImageMessageInput {
         return (image, text)
         
     }
-    
-    /*
-     1. try input.validate() で送信情報を取得
-     2. Error が throw されたら、catch して delegate に不備を伝える。送信処理は必然的に
-     中断。Error は失敗要因の詳細表現として利用可能
-     3. 送信情報が取得できたら、それを引数に送信処理を行う
-     */
 }
 
-// ImageMessageの入力値に関するプロパティはimageとtextの２つだとわかる↓
 struct ImageMessageInputValidator {
     let image: UIImage?
     let text: String?
@@ -62,16 +56,15 @@ struct ImageMessageInputValidator {
     }
 }
 
-// validationのみを責務とする型 → MessageSender の isLoading や result といった状態のことは気にする必要はない
 struct MessageInputValidator {
     let messageType: MessageType
     let image: UIImage?
     let text: String?
     private var isTextValid: Bool {
-        switch messageType { // ← ここでswitchする必要がない(TextMessageとImageMessageは本来関連のない処理のはず)
+        switch messageType {
         case .text: return text != nil && text!.count <= 300 // 300 字以内
         case .image: return text == nil || text!.count <= 80 // 80 字以内 or nil
-        case .official: return false // OfficialMessageはありえない
+        case .official: return false // ← これいらん！！
         }
     }
     
